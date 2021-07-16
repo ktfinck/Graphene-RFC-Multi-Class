@@ -20,19 +20,25 @@ from sklearn.metrics import plot_confusion_matrix
 from sklearn.multioutput import MultiOutputClassifier
 from sklearn.preprocessing import RobustScaler
 from sklearn.model_selection import train_test_split
-#%% Data Import and Trimming
+# %% Data Import and Trimming
 
-dataset = pd.read_excel(r'ProcessParameterDataset.xlsx')
+# Import data into python and separate by column
+
+dataset = pd.read_excel('ProcessParameterDataset.xlsx', usecols="A:D")
 dataset.columns = ['nozzle speed', 'flowrate', 'voltage', 'resistance']
 dataset = dataset.replace(to_replace='non conductive line ', value=0)
 
-NuzzelData     = np.array(dataset['nozzle speed'], dtype=np.float64)
-FlowrateData   = np.array(dataset['flowrate'], dtype=np.float64)
-VoltageData    = np.array(dataset['voltage'], dtype=np.float64)
+NuzzelData = np.array(dataset['nozzle speed'], dtype=np.float64)
+FlowrateData = np.array(dataset['flowrate'], dtype=np.float64)
+VoltageData = np.array(dataset['voltage'], dtype=np.float64)
 ResistanceData = np.array(dataset['resistance'], dtype=np.float64)
-CombinedData   = dataset[['nozzle speed', 'flowrate', 'voltage']].to_numpy()
+CombinedData = dataset[['nozzle speed', 'flowrate', 'voltage']].to_numpy()
 
 
+# %% Classification Definitions
+
+# Remove all '0' values in resistance data to determine median of all non-zero
+# resistances. This is used for the classification boundaries
 
 TrimmedData = np.delete(ResistanceData, np.where(ResistanceData == 0))
 SortedData = np.sort(TrimmedData)
@@ -41,73 +47,86 @@ HiLowData = np.zeros(np.size(ResistanceData))
 HiData = np.zeros(np.size(ResistanceData))
 LowData = np.zeros(np.size(ResistanceData))
 
+# Separate data above median and below the median
+
 for i in range(0, np.size(HiLowData)):
-    if 0<ResistanceData[i]<=ResistanceMedian:
+    if 0 < ResistanceData[i] <= ResistanceMedian:
         LowData[i] = ResistanceData[i]
-    elif ResistanceMedian<ResistanceData[i]:
+    elif ResistanceMedian < ResistanceData[i]:
         HiData[i] = ResistanceData[i]
-        
+
 LowData = np.delete(LowData, np.where(LowData == 0))
 HiData = np.delete(HiData, np.where(HiData == 0))
 
 ResistanceLowMedian = np.median(LowData)
 ResistanceHiMedian = np.median(HiData)
 
+# The 4 classificaitons are below the lower 1/4 median and above 0, between the
+# lower 1/4 median and the actual median, between the actual median and the
+# upper 1/4 median, and above the upper 1/4 median including 0.
+
 for i in range(0, np.size(HiLowData)):
-    if 0<ResistanceData[i]<=ResistanceLowMedian:
+    if 0 < ResistanceData[i] <= ResistanceLowMedian:
         HiLowData[i] = 1
-    elif ResistanceLowMedian<ResistanceData[i]<=ResistanceMedian:
+    elif ResistanceLowMedian < ResistanceData[i] <= ResistanceMedian:
         HiLowData[i] = 2
-    elif ResistanceMedian<ResistanceData[i]<=ResistanceHiMedian:
+    elif ResistanceMedian < ResistanceData[i] <= ResistanceHiMedian:
         HiLowData[i] = 3
-    elif ResistanceHiMedian<ResistanceData[i] or ResistanceData[i] == 0:
-        HiLowData[i] = -1 
-        
+    elif ResistanceHiMedian < ResistanceData[i] or ResistanceData[i] == 0:
+        HiLowData[i] = -1
+
+
+# %% Random Forest Classifier Creation
+
 X = CombinedData
 y = HiLowData
 
-X_train, X_test, y_train, y_test = train_test_split(X,y, test_size = 0.2)
 
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+# 80% of the data goes to train the model, 20% goes to test the model.
 
-RFC = RandomForestClassifier(n_estimators=100, 
-                             criterion= 'gini',
+RFC = RandomForestClassifier(n_estimators=100,
+                             criterion='gini',
                              bootstrap=True,
                              max_depth=None,
-                             max_features = None,
-                             oob_score = True)
+                             max_features=None,
+                             oob_score=True)
 RFC.fit(X_train, y_train)
 
-print(RFC.score(X_test,y_test))
+print(RFC.score(X_test, y_test))
 
-
+# Random forest predictions
 
 y_pred_test = RFC.predict(X_test)
-y_pred_train= RFC.predict(X_train)
+y_pred_train = RFC.predict(X_train)
 y_pred = RFC.predict(X)
 
 
+# %% Confusion Matrix
+
 fig, ax = plt.subplots(num='Overall', dpi=200)
-plot_confusion_matrix(RFC, X, y, cmap= 'bone', ax=ax)
+plot_confusion_matrix(RFC, X, y, cmap='bone', ax=ax)
 plt.title('Confusion Matrix: RFC Overall')
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
 
 fig, ax = plt.subplots(num='Test', dpi=200)
-plot_confusion_matrix(RFC, X_test, y_test, cmap= 'bone', ax=ax)
+plot_confusion_matrix(RFC, X_test, y_test, cmap='bone', ax=ax)
 plt.title('Confusion Matrix: RFC Test')
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
 
 fig, ax = plt.subplots(num='Train', dpi=200)
-plot_confusion_matrix(RFC, X_train, y_train, cmap= 'bone', ax=ax)
+plot_confusion_matrix(RFC, X_train, y_train, cmap='bone', ax=ax)
 plt.title('Confusion Matrix: RFC Train')
 plt.xlabel('Predicted')
 plt.ylabel('Actual')
 
+# %% Feature Importance
 
 importance = RFC.feature_importances_
 
-std = np.std([tree.feature_importances_ for tree in RFC.estimators_],axis=0)
+std = np.std([tree.feature_importances_ for tree in RFC.estimators_], axis=0)
 indices = np.argsort(importance)[::-1]
 label = []
 for f in range(X.shape[1]):
@@ -126,34 +145,38 @@ for f in range(X.shape[1]):
 # Plot the impurity-based feature importances of the forest
 fig, ax = plt.subplots(dpi=200)
 plt.title("Feature Importance: RFC Gini Impurity Multi-Class")
-plt.bar(range(X.shape[1]), importance[indices],
-        color=["dodgerblue", "goldenrod", "firebrick"], yerr=std[indices], align="center", width=0.7, capsize=5)
+plt.bar(range(X.shape[1]),
+        importance[indices],
+        color=["dodgerblue", "goldenrod", "firebrick"],
+        yerr=std[indices], align="center", width=0.7, capsize=5)
 plt.xticks(range(X.shape[1]), label)
 plt.xlim([-.5, X.shape[1]-.5])
-plt.ylim([0,1])
+plt.ylim([0, 1])
 ax.yaxis.grid()
 plt.ylabel('Importance')
 
+# %% K-Fold Validation
 
 k_fold = KFold(n_splits=5)
 k_fold.get_n_splits(X)
 # print(k_fold)
 
-for train_index, test_index in k_fold.split(X,y):
-      # print("TRAIN:", train_index, "TEST:", test_index)
-      X_train, X_test = X[train_index], X[test_index]
-      y_train, y_test = y[train_index], y[test_index]
-      #print(X_train, X_test, y_train, y_test)
+for train_index, test_index in k_fold.split(X, y):
+    # print("TRAIN:", train_index, "TEST:", test_index)
+    X_train, X_test = X[train_index], X[test_index]
+    y_train, y_test = y[train_index], y[test_index]
+    #print(X_train, X_test, y_train, y_test)
 
 
 k_fold_score_RFC = cross_val_score(RFC, X, y, cv=k_fold, n_jobs=-1)
 
 print('\n5-Fold Validation Score (RFC): ', k_fold_score_RFC)
 
+# %% Linear Regression
+
 LR = LinearRegression()
-LR.fit(X,y)
-LR_score = LR.score(X,y)
+LR.fit(X, y)
+LR_score = LR.score(X, y)
 
 
 print('Linear Regression Score: ', LR_score)
-
