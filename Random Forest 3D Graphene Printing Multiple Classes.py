@@ -165,7 +165,7 @@ for train_index, test_index in k_fold.split(X, y):
     # print("TRAIN:", train_index, "TEST:", test_index)
     X_train, X_test = X[train_index], X[test_index]
     y_train, y_test = y[train_index], y[test_index]
-    #print(X_train, X_test, y_train, y_test)
+    # print(X_train, X_test, y_train, y_test)
 
 
 k_fold_score_RFC = cross_val_score(RFC, X, y, cv=k_fold, n_jobs=-1)
